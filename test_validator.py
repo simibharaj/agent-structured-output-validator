@@ -35,3 +35,30 @@ def test_retry_recovers_after_bad_answer():
 def test_gives_up_after_max_attempts():
     with pytest.raises(RuntimeError):
         extract_with_retries(lambda p: "never valid", "x", max_attempts=2)
+
+
+NESTED = '{"outer": {"inner": {"k": 1}}, "list": [{"a": 1}, {"b": 2}]}'
+
+def test_extracts_nested_json_from_fence():
+    assert extract_json("```json\n" + NESTED + "\n```")["outer"]["inner"]["k"] == 1
+
+def test_extracts_nested_json_from_chatty_text():
+    assert extract_json("Result: " + NESTED + " done")["list"][1]["b"] == 2
+
+def test_fence_without_language_tag():
+    assert extract_json("```\n" + GOOD + "\n```")["client_id"] == "u1"
+
+def test_fence_with_surrounding_text():
+    raw = "Here is the answer:\n```json\n" + GOOD + "\n```\nLet me know if you need more."
+    assert extract_json(raw)["client_id"] == "u1"
+
+def test_uppercase_fence_tag():
+    assert extract_json("```JSON\n" + GOOD + "\n```")["client_id"] == "u1"
+
+def test_braces_in_chatter_before_fence():
+    raw = "I used the {schema} you gave.\n```json\n" + GOOD + "\n```"
+    assert extract_json(raw)["client_id"] == "u1"
+
+def test_malformed_json_raises_value_error():
+    with pytest.raises(ValueError):
+        extract_json('{"client_id": "u1",}')
