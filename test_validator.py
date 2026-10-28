@@ -1,5 +1,12 @@
 import pytest
-from validator import extract_json, parse_profile, extract_with_retries
+from pydantic import ValidationError
+from validator import (
+    MeetingNotes,
+    extract_json,
+    extract_with_retries,
+    parse_output,
+    parse_profile,
+)
 
 GOOD = '{"client_id":"u1","target_retirement_age":62,"monthly_income_needed":4500,"risk_assessment":"Moderate"}'
 
@@ -62,3 +69,37 @@ def test_braces_in_chatter_before_fence():
 def test_malformed_json_raises_value_error():
     with pytest.raises(ValueError):
         extract_json('{"client_id": "u1",}')
+
+
+MEETING_NOTES = '''{
+  "title": "Planning session",
+  "attendees": ["Alex Example"],
+  "decisions": ["Keep the demo provider-neutral"],
+  "action_items": [{"task": "Add a sample", "owner": "Alex Example"}]
+}'''
+
+
+def test_parse_output_uses_requested_schema():
+    notes = parse_output("```json\n" + MEETING_NOTES + "\n```", MeetingNotes)
+    assert isinstance(notes, MeetingNotes)
+    assert notes.action_items[0].task == "Add a sample"
+
+
+def test_parse_output_rejects_invalid_requested_schema():
+    with pytest.raises(ValidationError):
+        parse_output('{"title":"","action_items":[{"task":""}]}', MeetingNotes)
+
+
+def test_retry_uses_requested_schema_and_returns_typed_result():
+    answers = iter(['{"title":"Planning session","action_items":[{"task":""}]}', MEETING_NOTES])
+    prompts = []
+
+    def fake(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    notes = extract_with_retries(fake, "summarize the planning session", model=MeetingNotes)
+    assert isinstance(notes, MeetingNotes)
+    assert notes.title == "Planning session"
+    assert "previous answer was invalid" in prompts[1]
+    assert "task" in prompts[1]

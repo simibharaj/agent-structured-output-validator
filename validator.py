@@ -8,9 +8,12 @@ exact validation errors so it can correct itself.
 
 import json
 import re
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Literal, Optional, Type, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
+
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class DiscoveryProfile(BaseModel):
@@ -20,6 +23,18 @@ class DiscoveryProfile(BaseModel):
     existing_accounts: List[str] = Field(default_factory=list)
     risk_assessment: Literal["Conservative", "Moderate", "Aggressive"]
     notes: Optional[str] = None
+
+
+class MeetingActionItem(BaseModel):
+    task: str = Field(..., min_length=1)
+    owner: Optional[str] = None
+
+
+class MeetingNotes(BaseModel):
+    title: str = Field(..., min_length=1)
+    attendees: List[str] = Field(default_factory=list)
+    decisions: List[str] = Field(default_factory=list)
+    action_items: List[MeetingActionItem] = Field(default_factory=list)
 
 
 def extract_json(raw: str) -> dict:
@@ -36,17 +51,25 @@ def extract_json(raw: str) -> dict:
     return json.loads(text)
 
 
+def parse_output(raw: str, model: Type[ModelT]) -> ModelT:
+    """Extract JSON from model output and validate it against the requested Pydantic model."""
+    return model(**extract_json(raw))
+
+
 def parse_profile(raw: str) -> DiscoveryProfile:
-    return DiscoveryProfile(**extract_json(raw))
+    """Backward-compatible parser for the original discovery-profile example."""
+    return parse_output(raw, DiscoveryProfile)
 
 
 def extract_with_retries(
     call_llm: Callable[[str], str],
     prompt: str,
     max_attempts: int = 3,
-) -> DiscoveryProfile:
+    model: Type[ModelT] = DiscoveryProfile,
+) -> ModelT:
     """
     call_llm: function taking a prompt string and returning the model's text.
+    model: Pydantic model to validate; defaults to DiscoveryProfile for compatibility.
     On failure, re-prompts with the specific errors. Raises after max_attempts.
     """
     current = prompt
@@ -54,7 +77,7 @@ def extract_with_retries(
     for _ in range(max_attempts):
         raw = call_llm(current)
         try:
-            return parse_profile(raw)
+            return parse_output(raw, model)
         except (ValueError, ValidationError) as err:  # JSONDecodeError is a ValueError
             last_error = str(err)
             current = (

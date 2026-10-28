@@ -7,6 +7,7 @@ Middleware pattern for putting an LLM in front of a business system safely: neve
 - Validates with Pydantic v2 (typed fields, ranges, allowed values)
 - `extract_with_retries()` feeds validation errors back to the model and tries again, then fails loudly after N attempts
 - The model call is a plain function you pass in, so it works with any provider and is easy to test with a fake
+- `parse_output()` and `extract_with_retries()` accept any Pydantic v2 model; the included meeting-notes schema shows reuse beyond the original discovery-profile example
 
 ## Run it
 ```
@@ -15,5 +16,21 @@ python validator.py
 pytest
 ```
 
+## Reuse with another schema
+
+The retry loop can validate a different Pydantic model without changing the parser:
+
+```python
+from validator import MeetingNotes, extract_with_retries
+
+notes = extract_with_retries(
+    call_llm,  # your provider adapter: prompt in, model text out
+    "Summarize the planning session as JSON.",
+    model=MeetingNotes,
+)
+```
+
+`MeetingNotes` includes nested action items and is a fictional project-planning example. The original `parse_profile()` helper remains available for the discovery-profile example.
+
 ## Notes
-The example schema is a made-up client intake profile with anonymized ids. No real client data is included.
+The examples and sample names are fictional. No real client data is included.
