@@ -32,5 +32,17 @@ notes = extract_with_retries(
 
 `MeetingNotes` includes nested action items and is a fictional project-planning example. The original `parse_profile()` helper remains available for the discovery-profile example.
 
+## Optional live provider example
+
+`llm_provider_example.py` shows how to connect the retry loop to a real chat-completions provider. It supports endpoints that accept the OpenAI-compatible `POST /chat/completions` request and response shape; other providers can use their own adapter with the same `call_llm(prompt) -> str` interface.
+
+Set `LLM_API_BASE_URL` to the provider's HTTPS API base URL (for example, ending in `/v1`), `LLM_MODEL` to its model name, and `LLM_API_KEY` in your shell or secret manager. The example never stores the key. Remote URLs must use HTTPS; plain HTTP is accepted only for loopback development. Then run:
+
+```sh
+python llm_provider_example.py
+```
+
+The example sends only a fictional planning note. Its tests mock the HTTP request and do not call a provider.
+
 ## Notes
 The examples and sample names are fictional. No real client data is included.
