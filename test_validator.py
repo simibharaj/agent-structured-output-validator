@@ -58,6 +58,15 @@ def test_extracts_nested_json_from_fence():
 def test_extracts_nested_json_from_chatty_text():
     assert extract_json("Result: " + NESTED + " done")["list"][1]["b"] == 2
 
+
+def test_extracts_unfenced_json_after_braces_in_chatter():
+    raw = (
+        'I used the {schema} you gave. Result: '
+        '{"outer": {"text": "brace { and }", "inner": {"k": 1}}}'
+    )
+
+    assert extract_json(raw) == {"outer": {"text": "brace { and }", "inner": {"k": 1}}}
+
 def test_fence_without_language_tag():
     assert extract_json("```\n" + GOOD + "\n```")["client_id"] == "u1"
 

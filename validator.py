@@ -37,18 +37,35 @@ class MeetingNotes(BaseModel):
     action_items: List[MeetingActionItem] = Field(default_factory=list)
 
 
+def _extract_json_object(text: str) -> dict:
+    """Find the first complete JSON object in text that may include chatter."""
+    decoder = json.JSONDecoder()
+    last_decode_error: json.JSONDecodeError | None = None
+
+    for start, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text, start)
+        except json.JSONDecodeError as error:
+            if last_decode_error is None:
+                last_decode_error = error
+            continue
+        if isinstance(value, dict):
+            return value
+
+    if last_decode_error is not None:
+        raise last_decode_error
+    raise ValueError("no JSON object found in model output")
+
+
 def extract_json(raw: str) -> dict:
     """Pulls the first JSON object out of text that may include markdown fences or chatter."""
     text = raw.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fenced:
-        text = fenced.group(1)
-    else:
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end <= start:
-            raise ValueError("no JSON object found in model output")
-        text = text[start : end + 1]
-    return json.loads(text)
+        return json.loads(fenced.group(1))
+    return _extract_json_object(text)
 
 
 def parse_output(raw: str, model: Type[ModelT]) -> ModelT:
