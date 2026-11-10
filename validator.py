@@ -37,9 +37,23 @@ class MeetingNotes(BaseModel):
     action_items: List[MeetingActionItem] = Field(default_factory=list)
 
 
+class DuplicateJSONKeyError(ValueError):
+    """Raised when an object repeats a member name."""
+
+
+def _reject_duplicate_keys(pairs):
+    """Build JSON objects while rejecting repeated member names."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJSONKeyError(f"duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
 def _extract_json_object(text: str) -> dict:
     """Find the first complete JSON object in text that may include chatter."""
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=_reject_duplicate_keys)
     last_decode_error: json.JSONDecodeError | None = None
 
     for start, character in enumerate(text):
@@ -47,6 +61,8 @@ def _extract_json_object(text: str) -> dict:
             continue
         try:
             value, _ = decoder.raw_decode(text, start)
+        except DuplicateJSONKeyError:
+            raise
         except json.JSONDecodeError as error:
             if last_decode_error is None:
                 last_decode_error = error
@@ -64,7 +80,7 @@ def extract_json(raw: str) -> dict:
     text = raw.strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if fenced:
-        return json.loads(fenced.group(1))
+        return json.loads(fenced.group(1), object_pairs_hook=_reject_duplicate_keys)
     return _extract_json_object(text)
 
 

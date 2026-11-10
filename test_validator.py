@@ -86,6 +86,29 @@ def test_malformed_json_raises_value_error():
         extract_json('{"client_id": "u1",}')
 
 
+@pytest.mark.parametrize(
+    ("raw", "duplicate_key"),
+    [
+        ('{"title":"first","title":"last"}', "title"),
+        (
+            "```json\n"
+            '{"title":"Planning session","action_items":'
+            '[{"task":"first","task":"second"}]}\n'
+            "```",
+            "task",
+        ),
+        (
+            'I used the {schema} you gave. Result: '
+            '{"title":"Planning","metadata":{"source":"chat-a","source":"chat-b"}}',
+            "source",
+        ),
+    ],
+)
+def test_rejects_duplicate_json_keys_at_any_depth(raw, duplicate_key):
+    with pytest.raises(ValueError, match=f"duplicate JSON object key: '{duplicate_key}'"):
+        extract_json(raw)
+
+
 MEETING_NOTES = '''{
   "title": "Planning session",
   "attendees": ["Alex Example"],
@@ -118,6 +141,19 @@ def test_retry_uses_requested_schema_and_returns_typed_result():
     assert notes.title == "Planning session"
     assert "previous answer was invalid" in prompts[1]
     assert "task" in prompts[1]
+
+
+def test_retry_recovers_after_duplicate_json_key():
+    answers = iter(['{"title":"first","title":"ambiguous"}', MEETING_NOTES])
+    prompts = []
+
+    def fake(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    notes = extract_with_retries(fake, "summarize the planning session", model=MeetingNotes)
+    assert notes.title == "Planning session"
+    assert "duplicate JSON object key: 'title'" in prompts[1]
 
 
 def _set_provider_environment(monkeypatch, base_url="https://provider.example/v1"):
