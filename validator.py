@@ -51,24 +51,62 @@ def _reject_duplicate_keys(pairs):
     return result
 
 
+def _matching_object_end(text: str, start: int) -> Optional[int]:
+    """Return the end of a brace-balanced object, ignoring braces in strings."""
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index in range(start, len(text)):
+        character = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+
+    return None
+
+
 def _extract_json_object(text: str) -> dict:
     """Find the first complete JSON object in text that may include chatter."""
     decoder = json.JSONDecoder(object_pairs_hook=_reject_duplicate_keys)
     last_decode_error: json.JSONDecodeError | None = None
+    start = 0
 
-    for start, character in enumerate(text):
-        if character != "{":
-            continue
+    while True:
+        start = text.find("{", start)
+        if start == -1:
+            break
+
         try:
-            value, _ = decoder.raw_decode(text, start)
+            value, end = decoder.raw_decode(text, start)
         except DuplicateJSONKeyError:
             raise
         except json.JSONDecodeError as error:
             if last_decode_error is None:
                 last_decode_error = error
+            candidate_end = _matching_object_end(text, start)
+            if candidate_end is None:
+                break
+            start = candidate_end
             continue
+
         if isinstance(value, dict):
             return value
+        start = end
 
     if last_decode_error is not None:
         raise last_decode_error

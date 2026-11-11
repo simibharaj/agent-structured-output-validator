@@ -156,6 +156,40 @@ def test_retry_recovers_after_duplicate_json_key():
     assert "duplicate JSON object key: 'title'" in prompts[1]
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        'Broken wrapper: {"payload": {"title":"Partial"}, "ignored": }',
+        'Broken wrapper: {"payload": {"title":"Partial"}',
+        'Broken wrapper: {"note":"brace } and {", "payload":{"title":"Partial"}, "ignored": }',
+    ],
+)
+def test_rejects_nested_object_inside_malformed_wrapper(raw):
+    with pytest.raises(ValueError):
+        extract_json(raw)
+
+
+def test_extracts_valid_top_level_object_after_malformed_wrapper():
+    raw = f'Broken wrapper: {{"payload": {MEETING_NOTES}, "ignored": }} Later: {MEETING_NOTES}'
+
+    assert extract_json(raw) == json.loads(MEETING_NOTES)
+
+
+def test_retry_recovers_after_nested_object_inside_malformed_wrapper():
+    invalid = f'Broken wrapper: {{"payload": {MEETING_NOTES}, "ignored": }}'
+    answers = iter([invalid, MEETING_NOTES])
+    prompts = []
+
+    def fake(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    notes = extract_with_retries(fake, "summarize the planning session", model=MeetingNotes)
+    assert notes.title == "Planning session"
+    assert len(prompts) == 2
+    assert "previous answer was invalid" in prompts[1]
+
+
 def _set_provider_environment(monkeypatch, base_url="https://provider.example/v1"):
     monkeypatch.setenv("LLM_API_BASE_URL", base_url)
     monkeypatch.setenv("LLM_API_KEY", "test-only-not-a-secret")
