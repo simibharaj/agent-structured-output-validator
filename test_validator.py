@@ -19,6 +19,47 @@ GOOD = '{"client_id":"u1","target_retirement_age":62,"monthly_income_needed":450
 def test_extracts_from_markdown_fence():
     assert extract_json("```json\n" + GOOD + "\n```")["client_id"] == "u1"
 
+def test_rejects_fenced_json_array_instead_of_extracting_first_object():
+    raw = f"```json\n[{GOOD},{GOOD.replace('u1', 'u2')}]\n```"
+
+    with pytest.raises(ValueError, match="expected a JSON object, got an array"):
+        extract_json(raw)
+
+def test_rejects_unfenced_json_array_instead_of_extracting_first_object():
+    raw = f"[{GOOD},{GOOD.replace('u1', 'u2')}]"
+
+    with pytest.raises(ValueError, match="expected a JSON object, got an array"):
+        extract_json(raw)
+
+def test_rejects_json_array_after_chatter_instead_of_extracting_first_object():
+    raw = f"Answer: [{GOOD},{GOOD.replace('u1', 'u2')}]"
+
+    with pytest.raises(ValueError, match="expected a JSON object, got an array"):
+        extract_json(raw)
+
+def test_rejects_nested_object_inside_malformed_array_wrapper():
+    raw = f"Broken array: [{GOOD},]"
+
+    with pytest.raises(ValueError):
+        extract_json(raw)
+
+def test_extracts_after_bracketed_chatter():
+    assert extract_json("I used [schema] you gave. Result: " + GOOD)["client_id"] == "u1"
+
+def test_retry_recovers_after_fenced_json_array():
+    array_answer = f"```json\n[{GOOD},{GOOD.replace('u1', 'u2')}]\n```"
+    answers = iter([array_answer, GOOD])
+    prompts = []
+
+    def fake(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    profile = extract_with_retries(fake, "extract please")
+    assert profile.client_id == "u1"
+    assert len(prompts) == 2
+    assert "expected a JSON object, got an array" in prompts[1]
+
 def test_extracts_from_chatty_text():
     assert extract_json("Sure! Here you go: " + GOOD + " Hope that helps.")["client_id"] == "u1"
 

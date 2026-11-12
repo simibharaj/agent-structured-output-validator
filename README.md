@@ -5,6 +5,7 @@ Middleware pattern for putting an LLM in front of a business system safely: neve
 ## What it does
 - Pulls a JSON object out of messy output (markdown fences, extra chatter)
 - Rejects duplicate JSON object keys instead of silently choosing the last value
+- Rejects top-level JSON arrays, including fenced arrays, instead of silently accepting only their first object
 - Rejects malformed JSON wrappers instead of mistaking a nested object for the full answer
 - Validates with Pydantic v2 (typed fields, ranges, allowed values)
 - `extract_with_retries()` feeds validation errors back to the model and tries again, then fails loudly after N attempts

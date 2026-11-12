@@ -7,7 +7,6 @@ exact validation errors so it can correct itself.
 """
 
 import json
-import re
 from typing import Callable, List, Literal, Optional, Type, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
@@ -51,9 +50,10 @@ def _reject_duplicate_keys(pairs):
     return result
 
 
-def _matching_object_end(text: str, start: int) -> Optional[int]:
-    """Return the end of a brace-balanced object, ignoring braces in strings."""
-    depth = 0
+def _matching_container_end(text: str, start: int) -> Optional[int]:
+    """Return the end of a balanced object or array, ignoring quoted delimiters."""
+    closing_for = {"{": "}", "[": "]"}
+    stack = []
     in_string = False
     escaped = False
 
@@ -70,26 +70,30 @@ def _matching_object_end(text: str, start: int) -> Optional[int]:
 
         if character == '"':
             in_string = True
-        elif character == "{":
-            depth += 1
-        elif character == "}":
-            depth -= 1
-            if depth == 0:
+        elif character in closing_for:
+            stack.append(closing_for[character])
+        elif character in "}]":
+            if not stack or stack.pop() != character:
+                return None
+            if not stack:
                 return index + 1
 
     return None
 
 
 def _extract_json_object(text: str) -> dict:
-    """Find the first complete JSON object in text that may include chatter."""
+    """Find the first JSON object in chatter and reject arrays as a whole."""
     decoder = json.JSONDecoder(object_pairs_hook=_reject_duplicate_keys)
     last_decode_error: json.JSONDecodeError | None = None
     start = 0
 
     while True:
-        start = text.find("{", start)
-        if start == -1:
+        object_start = text.find("{", start)
+        array_start = text.find("[", start)
+        candidates = [position for position in (object_start, array_start) if position != -1]
+        if not candidates:
             break
+        start = min(candidates)
 
         try:
             value, end = decoder.raw_decode(text, start)
@@ -98,12 +102,14 @@ def _extract_json_object(text: str) -> dict:
         except json.JSONDecodeError as error:
             if last_decode_error is None:
                 last_decode_error = error
-            candidate_end = _matching_object_end(text, start)
+            candidate_end = _matching_container_end(text, start)
             if candidate_end is None:
                 break
             start = candidate_end
             continue
 
+        if isinstance(value, list):
+            raise ValueError("expected a JSON object, got an array")
         if isinstance(value, dict):
             return value
         start = end
@@ -114,12 +120,8 @@ def _extract_json_object(text: str) -> dict:
 
 
 def extract_json(raw: str) -> dict:
-    """Pulls the first JSON object out of text that may include markdown fences or chatter."""
-    text = raw.strip()
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fenced:
-        return json.loads(fenced.group(1), object_pairs_hook=_reject_duplicate_keys)
-    return _extract_json_object(text)
+    """Pulls a JSON object out of text and rejects top-level JSON arrays."""
+    return _extract_json_object(raw.strip())
 
 
 def parse_output(raw: str, model: Type[ModelT]) -> ModelT:
