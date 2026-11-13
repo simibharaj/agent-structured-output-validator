@@ -46,6 +46,20 @@ def test_rejects_nested_object_inside_malformed_array_wrapper():
 def test_extracts_after_bracketed_chatter():
     assert extract_json("I used [schema] you gave. Result: " + GOOD)["client_id"] == "u1"
 
+
+def test_extracts_json_after_unbalanced_bracketed_chatter():
+    raw = "I was considering [maybe a different prompt; answer: " + GOOD
+
+    assert extract_json(raw)["client_id"] == "u1"
+
+
+def test_rejects_nested_object_inside_unclosed_array_wrapper():
+    raw = "Broken array: [" + GOOD
+
+    with pytest.raises(ValueError):
+        extract_json(raw)
+
+
 def test_retry_recovers_after_fenced_json_array():
     array_answer = f"```json\n[{GOOD},{GOOD.replace('u1', 'u2')}]\n```"
     answers = iter([array_answer, GOOD])

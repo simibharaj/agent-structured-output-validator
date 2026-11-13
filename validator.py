@@ -95,6 +95,24 @@ def _extract_json_object(text: str) -> dict:
             break
         start = min(candidates)
 
+        if text[start] == "[":
+            item_start = start + 1
+            while item_start < len(text) and text[item_start].isspace():
+                item_start += 1
+            if item_start == len(text):
+                start += 1
+                continue
+
+            next_char = text[item_start]
+            is_json_value_start = (
+                next_char in '{["]tfn'
+                or next_char == "-"
+                or next_char.isdigit()
+            )
+            if not is_json_value_start:
+                start += 1
+                continue
+
         try:
             value, end = decoder.raw_decode(text, start)
         except DuplicateJSONKeyError:
